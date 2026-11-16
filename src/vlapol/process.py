@@ -29,6 +29,7 @@ class ProcessedEpisode:
     t: np.ndarray               # (N,) seconds since episode start
     T_world_tcp: np.ndarray     # (N,4,4)
     gripper: np.ndarray         # (N,) normalized opening
+    gripper_dist_m: np.ndarray  # (N,) raw finger-tag distance (gaps interpolated)
     actions: np.ndarray         # (N,7)
     K: np.ndarray               # 3x3 intrinsics of the raw images
 
@@ -98,8 +99,10 @@ def process_episode(path: str | Path, rig: Rig, fps: float | None = None) -> Pro
     det = GripperTagDetector(rig.gripper)
     grip = np.array([np.nan if np.isnan(x) else det.normalize(x) for x in dist])
     grip = fill_gaps(grip)
+    dist_f = fill_gaps(dist)
     if np.isnan(grip).all():
         grip = np.ones_like(grip)  # no tags seen at all: assume open
+        dist_f = np.full_like(dist_f, rig.gripper.open_dist_m)
 
     s, e = run
     t_ns = ep.timestamps()[s:e]
@@ -113,6 +116,7 @@ def process_episode(path: str | Path, rig: Rig, fps: float | None = None) -> Pro
         t=(ep.timestamps()[sel] - ep.timestamps()[sel[0]]) / 1e9,
         T_world_tcp=T_world_tcp,
         gripper=g,
+        gripper_dist_m=dist_f[sel],
         actions=compute_actions(T_world_tcp, g),
         K=ep.frames[sel[0]].K,
     )

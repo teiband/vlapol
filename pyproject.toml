@@ -10,13 +10,13 @@ requires-python = ">=3.10"
 dependencies = [
     "numpy",
     "scipy",
-    "opencv-contrib-python",
+    "opencv-python>=4.8",  # GUI build; ArUco is in the main module since 4.7
     "websockets>=13",
     "pyyaml",
 ]
 
 [project.optional-dependencies]
-lerobot = ["lerobot"]
+lerobot = ["lerobot[dataset]"]
 dev = ["pytest"]
 
 [project.scripts]

@@ -126,3 +126,19 @@ def test_record_headless(tmp_path):
         ep = Episode(e)
         assert ep.task == "wave" and 20 <= len(ep) <= 40
         process_episode(e, RIG)
+
+
+def test_export_lerobot(tmp_path):
+    pytest.importorskip("lerobot.datasets.lerobot_dataset")
+    from lerobot.datasets.lerobot_dataset import LeRobotDataset
+    from vlapol.export_lerobot import export
+
+    _write_sim_episode(tmp_path, seconds=2)
+    n = export(tmp_path / "session", "local/test", str(tmp_path / "lr"), RIG)
+    assert n == 1
+    ds = LeRobotDataset("local/test", root=str(tmp_path / "lr"))
+    x = ds[3]
+    assert tuple(x["observation.state"].shape) == (2,)
+    assert tuple(x["action"].shape) == (7,)
+    assert tuple(x["observation.images.wrist"].shape) == (3, 480, 640)
+    assert x["task"] == "pick up the cup"

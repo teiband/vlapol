@@ -4,7 +4,7 @@
 
 Features:
     observation.images.wrist  video (H, W, 3)   wrist camera image (phone on the mockup)
-    observation.state         float32 (1,)      gripper opening, 0 closed .. 1 open
+    observation.state         float32 (2,)      [gripper opening 0 closed..1 open, tag distance in m]
     action                    float32 (7,)      [dx, dy, dz, drx, dry, drz, gripper]
                                                 relative TCP motion to the next step (see vlapol.process)
 """
@@ -29,7 +29,9 @@ IMAGE_KEY = "observation.images.wrist"
 def _import_lerobot_dataset():
     try:
         from lerobot.datasets.lerobot_dataset import LeRobotDataset  # lerobot >= 0.3
-    except ImportError:
+    except ModuleNotFoundError as e:
+        if e.name not in ("lerobot.datasets", "lerobot.datasets.lerobot_dataset"):
+            raise  # e.g. missing optional deps: pip install "lerobot[dataset]"
         from lerobot.common.datasets.lerobot_dataset import LeRobotDataset  # older layout
     return LeRobotDataset
 
@@ -38,7 +40,9 @@ def features(image_size: tuple[int, int]) -> dict:
     h, w = image_size
     return {
         IMAGE_KEY: {"dtype": "video", "shape": (h, w, 3), "names": ["height", "width", "channels"]},
-        "observation.state": {"dtype": "float32", "shape": (1,), "names": ["gripper"]},
+        # 2-dim on purpose: LeRobot stores shape (1,) features as scalars, which breaks policies
+        # expecting a (B, D) state tensor.
+        "observation.state": {"dtype": "float32", "shape": (2,), "names": ["gripper", "gripper_dist_m"]},
         "action": {"dtype": "float32", "shape": (7,), "names": ACTION_NAMES},
     }
 
@@ -53,7 +57,7 @@ def iter_frames(ep_dir, rig: Rig):
         if img.shape[:2] != (h, w):
             img = cv2.resize(img, (w, h), interpolation=cv2.INTER_AREA)
         yield (cv2.cvtColor(img, cv2.COLOR_BGR2RGB),
-               np.array([pe.gripper[i]], np.float32),
+               np.array([pe.gripper[i], pe.gripper_dist_m[i]], np.float32),
                pe.actions[i].astype(np.float32),
                pe.task)
 

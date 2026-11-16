@@ -34,7 +34,14 @@ opening. The PC records the stream, converts it into relative end-effector actio
 
 ```bash
 pip install -e ".[dev]"
-pip install lerobot          # only needed for the export step
+pip install -e ".[lerobot]"  # only needed for the export step
+```
+
+LeRobot pulls in `opencv-python-headless`, which replaces the GUI build of OpenCV. If the recording
+window then fails with `cv2.imshow ... not implemented`, restore the GUI build:
+
+```bash
+pip install --force-reinstall --no-deps opencv-python
 ```
 
 ### 1. Phone app
@@ -98,7 +105,7 @@ vlapol-export-lerobot data/raw --repo-id local/umi_phone --root data/lerobot/umi
 | Feature | Shape | Meaning |
 |---|---|---|
 | `observation.images.wrist` | 480×640×3 video | Phone camera |
-| `observation.state` | (1,) | Gripper opening, 0 = closed, 1 = open |
+| `observation.state` | (2,) | Gripper opening (0 = closed, 1 = open) and raw finger-tag distance in m |
 | `action` | (7,) | `[dx, dy, dz, drx, dry, drz, gripper]`: pose of the TCP at the next step, expressed in the current TCP frame (m, rotation vector in rad), plus the gripper opening at the next step |
 
 Actions are **relative to the current TCP frame**, so they need no world frame or robot base. The same
