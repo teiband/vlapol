@@ -1,8 +1,88 @@
 # vlapol
 
-Testbed for VLA training and inference on limited hardware.
+Testbed for VLA training and inference on limited hardware resources. It has two parts:
 
-This repo collects demonstrations **without a robot**. An Android phone is mounted on a mockup of the
+- [Simulation](#simulation-smolvla-on-a-mujoco-pick-and-place-task): fine-tune SmolVLA on a simulated
+  pick-and-place task and evaluate it in MuJoCo.
+- [Phone-based data collection](#phone-based-data-collection): record real demonstrations with an
+  Android phone on a gripper mockup and export them as a LeRobot dataset.
+
+## Simulation: SmolVLA on a MuJoCo pick-and-place task
+
+Fine-tunes [SmolVLA](https://huggingface.co/lerobot/smolvla_base) (LeRobot) on a simulated
+pick-and-place task and evaluates it closed loop in MuJoCo. There is no robot arm: the robot is a
+floating parallel-jaw gripper with a wrist camera. Training and policy evaluation run on Google
+Colab (free T4); the simulation and the scripted expert also run on a CPU-only machine.
+
+### Layout
+
+```
+src/vlapol/
+  assets/pick_place.xml   MuJoCo scene: table, cube, place target, floating gripper, cameras
+  env.py                  PickPlaceEnv (reset / step / render)
+  expert.py               scripted expert (uses privileged sim state)
+  dataset.py              LeRobotDataset feature schema
+  collect.py              demo collection -> LeRobotDataset v3.0
+  train.py                lerobot-train wrapper: checkpoint mirroring + resume
+  evaluate.py             closed-loop evaluation, success rate + videos
+notebooks/smolvla_finetune_colab.ipynb   the full pipeline on Colab
+tests/                    env / expert / checkpoint-sync tests
+```
+
+### Task
+
+| | |
+|---|---|
+| Task string | `pick up the {red,blue,yellow} cube and place it on the green target` (one per episode) |
+| Observation | `observation.state` = TCP x, y, z, yaw, gripper opening; `observation.images.wrist` 256x256 (optional `scene` overview camera) |
+| Action | 5-D in [-1, 1]: dx, dy, dz, dyaw (2 cm / 0.15 rad per step at full scale) and absolute gripper command (-1 closed, +1 open) |
+| Control rate | 20 Hz |
+| Randomized | cube position, yaw and colour, target position, gripper start pose |
+| Success | cube at rest within 3 cm of the target centre, released, gripper retreated |
+
+### Colab
+
+Open `notebooks/smolvla_finetune_colab.ipynb` in Colab, select a T4 runtime and run it top to
+bottom. It collects demos, fine-tunes and evaluates. The dataset, the two newest checkpoints and
+the eval results are kept in `MyDrive/vlapol/`; after a disconnect, re-running the cells resumes
+training from the newest checkpoint.
+
+Set `BRANCH` in the first cell to the branch that holds this code.
+
+### Local (Windows 11, CPU)
+
+The env and the expert need only MuJoCo:
+
+```
+py -3.12 -m venv .venv
+.venv\Scripts\activate
+pip install -e ".[dev]"
+pytest
+python -m vlapol.evaluate --expert --episodes 10 --output-dir outputs/expert
+```
+
+Collecting demos or loading a policy also needs LeRobot (`pip install -e ".[lerobot]"`, Python 3.12+):
+
+```
+python -m vlapol.collect --root data/vlapol_pickplace --episodes 100
+python -m vlapol.evaluate --policy-path <checkpoint>/pretrained_model --episodes 10 --device cpu
+```
+
+### Commands
+
+```
+python -m vlapol.collect  --root DATASET --episodes N [--cameras wrist scene] [--resume]
+python -m vlapol.train    --dataset-root DATASET --run-dir PERSISTENT_DIR [--steps N] [lerobot-train flags]
+python -m vlapol.evaluate --policy-path CKPT/pretrained_model | --expert  [--episodes N] [--output-dir DIR]
+```
+
+`vlapol.train` trains into a local directory and copies each finished checkpoint to `--run-dir`.
+It does this because Google Drive does not support the `checkpoints/last` symlink that
+`lerobot-train` creates. Running the same command again resumes from the newest checkpoint.
+
+## Phone-based data collection
+
+This part collects demonstrations **without a robot**. An Android phone is mounted on a mockup of the
 UMI gripper and you move the mockup by hand. ARCore on the phone tracks the camera in metric 6-DoF (visual-inertial
 odometry, no markers in the scene). Two small ArUco tags on the mockup's fingers give the gripper
 opening. The PC records the stream, converts it into relative end-effector actions and exports a
@@ -17,7 +97,7 @@ opening. The PC records the stream, converts it into relative end-effector actio
  └──────────────────────┘       └──────────────────────────────────────────────┘
 ```
 
-## Layout
+### Layout
 
 | Path | What |
 |---|---|
@@ -30,10 +110,10 @@ opening. The PC records the stream, converts it into relative end-effector actio
 | `src/vlapol/viz.py` | Draws an action chunk as a 3D trajectory on the image (used for replay and later for live eval) |
 | `src/vlapol/export_lerobot.py` | LeRobot export |
 
-## Setup
+### Setup
 
 ```bash
-pip install -e ".[dev]"
+pip install -e ".[phone,dev]"
 pip install -e ".[lerobot]"  # only needed for the export step
 ```
 
@@ -44,7 +124,7 @@ window then fails with `cv2.imshow ... not implemented`, restore the GUI build:
 pip install --force-reinstall --no-deps opencv-python
 ```
 
-### 1. Phone app
+#### 1. Phone app
 
 You need an [ARCore-supported phone](https://developers.google.com/ar/devices) with
 *Google Play Services for AR* installed (from the Play Store; the app prompts for it).
@@ -72,7 +152,7 @@ allow port 8765.
 The streamed image is the **sensor-native landscape** CPU image (640×480 by default). Pose and intrinsics are
 given in that same orientation, so phone screen rotation doesn't affect anything.
 
-#### First test
+##### First test
 
 ```bash
 vlapol-phone-check
@@ -87,7 +167,7 @@ while it lies there, and slide the phone along the ruler without turning it.
 If it stays `PAUSED`, the phone screen shows the reason (for example too little light or too few
 features). The screen also shows the live camera image.
 
-### 2. Mount and tags
+#### 2. Mount and tags
 
 - Mount the phone **rigidly** on the mockup. The back camera should look along the gripper's approach
   direction and see both fingertips. Keep the fingertips at least about 10 cm from the lens, because phones can't
@@ -104,7 +184,7 @@ features). The screen also shows the live camera image.
 - Measure `T_cam_tcp` in `configs/rig.yaml`: the position of the fingertip midpoint in the camera frame
   (x right, y down, z forward, in meters). Rough millimeter accuracy is enough. Check it with step 4.
 
-### 3. Record
+#### 3. Record
 
 ```bash
 vlapol-record --out data/raw/cup_s1 --task "put the cup on the plate"
@@ -114,7 +194,7 @@ vlapol-record --out data/raw/cup_s1 --task "put the cup on the plate"
 phone around a little so ARCore starts tracking. When tracking is lost, the preview shows a red warning.
 During processing, only the longest tracked segment of an episode is kept.
 
-### 4. Check the labels
+#### 4. Check the labels
 
 ```bash
 vlapol-replay data/raw/cup_s1/episode_000000 --chunk 10 --out replay.mp4
@@ -124,7 +204,7 @@ This draws the ground-truth future TCP trajectory on each frame. The white dot s
 fingertips, and the line should follow where the gripper actually goes next. The line is green when the gripper
 is open and red when it is closed. If the dot is off, fix `T_cam_tcp`.
 
-### 5. Export to LeRobot
+#### 5. Export to LeRobot
 
 ```bash
 vlapol-export-lerobot data/raw --repo-id local/umi_phone --root data/lerobot/umi_phone
@@ -140,7 +220,7 @@ Actions are **relative to the current TCP frame**, so they need no world frame o
 prediction can be drawn as arrows on the live camera image or sent to a real arm's end-effector delta
 controller. The export rate is `export.fps` in `rig.yaml` (default 10 Hz; ARCore streams at about 30 Hz).
 
-## Testing without a phone
+### Testing without a phone
 
 `vlapol.phone.sim` sends synthetic frames with a known trajectory and moving finger tags, using exactly the
 app's wire format:
