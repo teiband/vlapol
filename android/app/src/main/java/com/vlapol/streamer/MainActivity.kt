@@ -21,12 +21,16 @@ import com.google.ar.core.ArCoreApk
 import com.google.ar.core.CameraConfig
 import com.google.ar.core.CameraConfigFilter
 import com.google.ar.core.Config
+import com.google.ar.core.Coordinates2d
 import com.google.ar.core.Session
 import com.google.ar.core.TrackingState
 import com.google.ar.core.exceptions.NotYetAvailableException
 import com.google.ar.core.exceptions.UnavailableException
 import org.json.JSONArray
 import org.json.JSONObject
+import java.nio.ByteBuffer
+import java.nio.ByteOrder
+import java.nio.FloatBuffer
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
@@ -45,7 +49,41 @@ class MainActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         private const val TAG = "VlapolStreamer"
         private const val TARGET_WIDTH = 640
         private const val JPEG_QUALITY = 90
+
+        private const val VERTEX_SHADER = """
+            attribute vec4 a_Position;
+            attribute vec2 a_TexCoord;
+            varying vec2 v_TexCoord;
+            void main() {
+                gl_Position = a_Position;
+                v_TexCoord = a_TexCoord;
+            }
+        """
+        private const val FRAGMENT_SHADER = """
+            #extension GL_OES_EGL_image_external : require
+            precision mediump float;
+            varying vec2 v_TexCoord;
+            uniform samplerExternalOES u_Texture;
+            void main() {
+                gl_FragColor = texture2D(u_Texture, v_TexCoord);
+            }
+        """
+        private val QUAD_NDC = floatArrayOf(-1f, -1f, 1f, -1f, -1f, 1f, 1f, 1f)
+
+        private fun floatBuffer(n: Int): FloatBuffer =
+            ByteBuffer.allocateDirect(n * 4).order(ByteOrder.nativeOrder()).asFloatBuffer()
     }
+
+    // Camera preview (full-screen quad with the ARCore camera texture)
+    private var previewProgram = 0
+    private var positionAttrib = 0
+    private var texCoordAttrib = 0
+    private val quadCoords: FloatBuffer = floatBuffer(8).apply { put(QUAD_NDC); position(0) }
+    private val quadTexCoords: FloatBuffer = floatBuffer(8)
+    private var texCoordsReady = false
+    private var surfaceWidth = 0
+    private var surfaceHeight = 0
+    @Volatile private var geometryDirty = true
 
     private var session: Session? = null
     private var installRequested = false
@@ -193,13 +231,61 @@ class MainActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MIN_FILTER, GLES20.GL_LINEAR)
         GLES20.glTexParameteri(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, GLES20.GL_TEXTURE_MAG_FILTER, GLES20.GL_LINEAR)
         cameraTextureId = tex[0]
+
+        previewProgram = GLES20.glCreateProgram().also { prog ->
+            GLES20.glAttachShader(prog, compileShader(GLES20.GL_VERTEX_SHADER, VERTEX_SHADER))
+            GLES20.glAttachShader(prog, compileShader(GLES20.GL_FRAGMENT_SHADER, FRAGMENT_SHADER))
+            GLES20.glLinkProgram(prog)
+        }
+        positionAttrib = GLES20.glGetAttribLocation(previewProgram, "a_Position")
+        texCoordAttrib = GLES20.glGetAttribLocation(previewProgram, "a_TexCoord")
+        texCoordsReady = false
+        geometryDirty = true
+    }
+
+    private fun compileShader(type: Int, source: String): Int {
+        val shader = GLES20.glCreateShader(type)
+        GLES20.glShaderSource(shader, source)
+        GLES20.glCompileShader(shader)
+        val ok = IntArray(1)
+        GLES20.glGetShaderiv(shader, GLES20.GL_COMPILE_STATUS, ok, 0)
+        if (ok[0] == 0) Log.e(TAG, "shader compile failed: " + GLES20.glGetShaderInfoLog(shader))
+        return shader
+    }
+
+    /** Draws what the camera sees. Only the screen preview; the streamed JPEG is unaffected. */
+    private fun drawPreview(frame: com.google.ar.core.Frame) {
+        if (frame.timestamp == 0L) return  // no camera image yet
+        if (!texCoordsReady || frame.hasDisplayGeometryChanged()) {
+            quadCoords.position(0)
+            quadTexCoords.position(0)
+            frame.transformCoordinates2d(
+                Coordinates2d.OPENGL_NORMALIZED_DEVICE_COORDINATES, quadCoords,
+                Coordinates2d.TEXTURE_NORMALIZED, quadTexCoords)
+            texCoordsReady = true
+        }
+        quadCoords.position(0)
+        quadTexCoords.position(0)
+        GLES20.glDisable(GLES20.GL_DEPTH_TEST)
+        GLES20.glUseProgram(previewProgram)
+        GLES20.glActiveTexture(GLES20.GL_TEXTURE0)
+        GLES20.glBindTexture(GLES11Ext.GL_TEXTURE_EXTERNAL_OES, cameraTextureId)
+        GLES20.glVertexAttribPointer(positionAttrib, 2, GLES20.GL_FLOAT, false, 0, quadCoords)
+        GLES20.glVertexAttribPointer(texCoordAttrib, 2, GLES20.GL_FLOAT, false, 0, quadTexCoords)
+        GLES20.glEnableVertexAttribArray(positionAttrib)
+        GLES20.glEnableVertexAttribArray(texCoordAttrib)
+        GLES20.glDrawArrays(GLES20.GL_TRIANGLE_STRIP, 0, 4)
+        GLES20.glDisableVertexAttribArray(positionAttrib)
+        GLES20.glDisableVertexAttribArray(texCoordAttrib)
     }
 
     private var cameraTextureId = -1
 
     override fun onSurfaceChanged(gl: GL10?, width: Int, height: Int) {
         GLES20.glViewport(0, 0, width, height)
-        session?.setDisplayGeometry(windowManager.defaultDisplay.rotation, width, height)
+        surfaceWidth = width
+        surfaceHeight = height
+        geometryDirty = true
     }
 
     override fun onDrawFrame(gl: GL10?) {
@@ -207,10 +293,17 @@ class MainActivity : AppCompatActivity(), GLSurfaceView.Renderer {
         val s = session ?: return
         if (cameraTextureId < 0) return
         s.setCameraTextureName(cameraTextureId)
+        if (geometryDirty && surfaceWidth > 0) {
+            // Done here because the session may not exist yet when the surface is created.
+            @Suppress("DEPRECATION")
+            s.setDisplayGeometry(windowManager.defaultDisplay.rotation, surfaceWidth, surfaceHeight)
+            geometryDirty = false
+        }
 
         val frame = try { s.update() } catch (e: Exception) {
             Log.w(TAG, "update failed", e); return
         }
+        drawPreview(frame)
         val camera = frame.camera
         val tracking = camera.trackingState
 
@@ -261,10 +354,14 @@ class MainActivity : AppCompatActivity(), GLSurfaceView.Renderer {
             val fps = fpsCounter * 1e9 / (now - fpsWindowStart)
             fpsCounter = 0
             fpsWindowStart = now
-            setStatus(String.format(
+            var status = String.format(
                 "%s | %.1f fps | %dx%d | %s | dropped %d%s",
                 streamer.state, fps, width, height, tracking.name, streamer.dropped,
-                if (!sent) " (not sending)" else ""))
+                if (!sent) " (not sending)" else "")
+            if (tracking != TrackingState.TRACKING) {
+                status += " | not tracking (${camera.trackingFailureReason.name}): move the phone slowly sideways"
+            }
+            setStatus(status)
         }
     }
 

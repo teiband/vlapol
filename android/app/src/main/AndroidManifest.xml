@@ -3,6 +3,10 @@
 
     <uses-permission android:name="android.permission.CAMERA" />
     <uses-permission android:name="android.permission.INTERNET" />
+    <!-- ARCore reads the IMU faster than 200 Hz. Without this permission Android 12+ rejects that
+         request outright in debuggable builds (instead of capping it), the IMU stays at its minimum
+         rate (about 6 Hz) and ARCore never starts tracking. -->
+    <uses-permission android:name="android.permission.HIGH_SAMPLING_RATE_SENSORS" />
     <uses-feature android:name="android.hardware.camera.ar" android:required="true" />
     <uses-feature android:glEsVersion="0x00020000" android:required="true" />
 

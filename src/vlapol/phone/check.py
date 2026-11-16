@@ -3,6 +3,11 @@
     vlapol-phone-check [--port 8765] [--seconds 30]
 
 Move the phone around: 'moved' should follow your motion in centimeters (ARCore is metric).
+
+To check the metric scale, lay the phone down for a few seconds, slide it a known distance along a
+ruler and lay it down again. Each time the phone comes to rest at a new place, the tool prints how
+far that is from the previous rest position and how much the phone turned in between. Don't turn
+it: the lens is off-center, so turning moves the camera too.
 """
 from __future__ import annotations
 
@@ -13,6 +18,44 @@ import numpy as np
 
 from ..geometry import arcore_pose_to_T_world_cam
 from .server import PhoneServer
+
+
+STILL_SPREAD_M = 0.004   # the phone counts as still if it stays within this radius ...
+STILL_SECONDS = 2        # ... for this many consecutive seconds
+NEW_REST_M = 0.01        # a rest position this far from the last one is a new one
+
+
+class RestTracker:
+    """Finds the positions where the phone lies still and measures the steps between them."""
+
+    def __init__(self) -> None:
+        self.rest = None          # last confirmed rest position
+        self._candidate = None
+        self._count = 0
+
+    def update(self, positions: np.ndarray) -> float | None:
+        """Feed one second of positions (n, 3). Returns the step in meters when a new rest is found."""
+        if len(positions) == 0:
+            self._candidate, self._count = None, 0
+            return None
+        mean = positions.mean(axis=0)
+        if np.linalg.norm(positions - mean, axis=1).max() > STILL_SPREAD_M:
+            self._candidate, self._count = None, 0
+            return None
+        if self._candidate is not None and np.linalg.norm(mean - self._candidate) < STILL_SPREAD_M:
+            self._count += 1
+        else:
+            self._candidate, self._count = mean, 1
+        if self._count < STILL_SECONDS:
+            return None
+        if self.rest is None:
+            self.rest = self._candidate
+            return None
+        step = float(np.linalg.norm(self._candidate - self.rest))
+        if step < NEW_REST_M:
+            return None
+        self.rest = self._candidate
+        return step
 
 
 def main(argv=None) -> None:
@@ -29,6 +72,8 @@ def main(argv=None) -> None:
         srv.drain()
         start = time.monotonic()
         origin = None
+        rests = RestTracker()
+        rest_R = None  # camera orientation at the last rest position
         try:
             while not args.seconds or time.monotonic() - start < args.seconds:
                 time.sleep(1.0)
@@ -44,6 +89,16 @@ def main(argv=None) -> None:
                 latency = (time.time() - f.recv_time) * 1000
                 kb = np.mean([len(x.jpeg) for x in frames]) / 1024
                 line = f"{rate:5.1f} fps  {kb:5.1f} kB/frame  skipped {lost_seq:3d}  {f.tracking:8s}"
+                tracked = [arcore_pose_to_T_world_cam(x.pose7) for x in frames if x.tracking_ok]
+                last_rest = rests.rest
+                step = rests.update(np.array([T[:3, 3] for T in tracked]).reshape(-1, 3))
+                turned = None
+                if rests.rest is not last_rest:  # came to rest at a new place
+                    R = tracked[-1][:3, :3]
+                    if rest_R is not None:
+                        cos = (np.trace(rest_R.T @ R) - 1) / 2
+                        turned = float(np.degrees(np.arccos(np.clip(cos, -1, 1))))
+                    rest_R = R
                 if f.tracking_ok:
                     T = arcore_pose_to_T_world_cam(f.pose7)
                     origin = T if origin is None else origin
@@ -52,6 +107,10 @@ def main(argv=None) -> None:
                 elif f.tracking_failure:
                     line += f"  ({f.tracking_failure})"
                 print(line + f"  [last frame {latency:.0f} ms ago]", flush=True)
+                if step is not None:
+                    # The lens is off-center, so turning the phone also moves the camera.
+                    print(f"    --> came to rest {step * 100:.1f} cm from the previous rest position"
+                          f" (turned {turned:.1f} deg)", flush=True)
         except KeyboardInterrupt:
             pass
 

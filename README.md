@@ -79,7 +79,13 @@ vlapol-phone-check
 ```
 
 Then tap *Connect* in the app. You should see about 30 fps and `TRACKING` once you move the phone a little.
-`moved` should match the real distance you move it: shift the phone 20 cm along a ruler and check.
+`moved` should match the real distance you move it. To check: lay the phone down for a few seconds,
+shift it 20 cm along a ruler and lay it down again. The tool then prints
+`came to rest 20.0 cm from the previous rest position (turned 0.3 deg)`. Keep the lens uncovered
+while it lies there, and slide the phone along the ruler without turning it.
+
+If it stays `PAUSED`, the phone screen shows the reason (for example too little light or too few
+features). The screen also shows the live camera image.
 
 ### 2. Mount and tags
 
