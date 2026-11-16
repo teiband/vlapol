@@ -46,18 +46,40 @@ pip install --force-reinstall --no-deps opencv-python
 
 ### 1. Phone app
 
-Open `android/` in Android Studio, let it sync and run it on the phone. You need an
-[ARCore-supported device](https://developers.google.com/ar/devices). The app streams continuously to
-the URL in its text field. The default `ws://127.0.0.1:8765` is meant for a USB connection with:
+You need an [ARCore-supported phone](https://developers.google.com/ar/devices) with
+*Google Play Services for AR* installed (from the Play Store; the app prompts for it).
+
+Build and install over USB. This needs USB debugging enabled, and Android Studio or the
+Android SDK, with `local.properties` pointing at the SDK:
+
+```bash
+cd android && ./gradlew installDebug
+```
+
+Alternatively, run `./gradlew assembleDebug`, copy `app/build/outputs/apk/debug/app-debug.apk` to the phone
+and open it there (you have to allow installing from unknown sources).
+
+The app streams continuously to the URL in its text field. The default `ws://127.0.0.1:8765` is meant
+for a USB connection with:
 
 ```bash
 adb reverse tcp:8765 tcp:8765
 ```
 
-USB gives the lowest latency and the most reliable connection. Over Wi-Fi, enter `ws://<pc-ip>:8765` instead.
+Over Wi-Fi, enter `ws://<pc-ip>:8765` instead. Phone and PC must be on the same network, and the PC firewall has to
+allow port 8765.
 
 The streamed image is the **sensor-native landscape** CPU image (640×480 by default). Pose and intrinsics are
 given in that same orientation, so phone screen rotation doesn't affect anything.
+
+#### First test
+
+```bash
+vlapol-phone-check
+```
+
+Then tap *Connect* in the app. You should see about 30 fps and `TRACKING` once you move the phone a little.
+`moved` should match the real distance you move it: shift the phone 20 cm along a ruler and check.
 
 ### 2. Mount and tags
 

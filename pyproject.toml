@@ -25,6 +25,7 @@ vlapol-calibrate-gripper = "vlapol.calibrate_gripper:main"
 vlapol-replay = "vlapol.replay:main"
 vlapol-export-lerobot = "vlapol.export_lerobot:main"
 vlapol-make-tags = "vlapol.tags:main"
+vlapol-phone-check = "vlapol.phone.check:main"
 
 [tool.setuptools.packages.find]
 where = ["src"]
