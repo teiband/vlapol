@@ -1,0 +1,33 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "vlapol"
+version = "0.1.0"
+description = "Testbed for VLA training and inference on limited hardware"
+requires-python = ">=3.10"
+dependencies = [
+    "numpy",
+    "scipy",
+    "opencv-contrib-python",
+    "websockets>=13",
+    "pyyaml",
+]
+
+[project.optional-dependencies]
+lerobot = ["lerobot"]
+dev = ["pytest"]
+
+[project.scripts]
+vlapol-record = "vlapol.record:main"
+vlapol-calibrate-gripper = "vlapol.calibrate_gripper:main"
+vlapol-replay = "vlapol.replay:main"
+vlapol-export-lerobot = "vlapol.export_lerobot:main"
+vlapol-make-tags = "vlapol.tags:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

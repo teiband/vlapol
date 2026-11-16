@@ -1,0 +1,25 @@
+# Physical description of the phone-on-UMI-mockup rig.
+# All frames follow the OpenCV camera convention: x right, y down, z forward (optical axis),
+# expressed in the *sensor-native landscape* image that the Android app streams.
+
+# Pose of the tool center point (TCP, midpoint between the fingertips) in the camera frame.
+# Measure this on your mockup. Translation in meters, rotation as a rotation vector (rad).
+# Default: TCP 4 cm below and 15 cm in front of the lens, axes aligned with the camera
+# (TCP z = approach direction = camera optical axis).
+T_cam_tcp:
+  translation: [0.0, 0.04, 0.15]
+  rotvec: [0.0, 0.0, 0.0]
+
+gripper:
+  aruco_dict: DICT_4X4_50
+  left_id: 0
+  right_id: 1
+  tag_size_m: 0.015          # printed black-border edge length
+  # Distance between the two tag centers when fully closed / fully open (meters).
+  # Fill these in with `vlapol-calibrate-gripper`.
+  closed_dist_m: 0.020
+  open_dist_m: 0.080
+
+export:
+  fps: 10                    # resampling rate of the LeRobot dataset
+  image_size: [480, 640]     # [height, width]; frames are resized if different
