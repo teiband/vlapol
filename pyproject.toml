@@ -1,0 +1,28 @@
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[project]
+name = "vlapol"
+version = "0.1.0"
+description = "SmolVLA fine-tuning testbed: MuJoCo floating-gripper pick-and-place, trained and evaluated on Colab"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = [
+    "mujoco>=3.2",
+    "numpy",
+]
+
+[project.optional-dependencies]
+# Demo collection, training and policy evaluation. Not needed to run the env or the expert.
+lerobot = ["lerobot[smolvla,training]==0.7.0"]
+dev = ["pytest"]
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/vlapol"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+
+[tool.ruff]
+line-length = 120

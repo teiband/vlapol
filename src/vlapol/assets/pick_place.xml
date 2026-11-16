@@ -1,0 +1,88 @@
+<mujoco model="vlapol_pick_place">
+  <!-- Floating parallel-jaw gripper (no arm) with a wrist camera, a cube and a place target.
+       The gripper base is driven by position actuators on 3 slides + 1 yaw hinge. -->
+  <compiler angle="radian" autolimits="true"/>
+  <option timestep="0.002" integrator="implicitfast" cone="elliptic" impratio="10"/>
+  <size memory="16M"/>
+
+  <visual>
+    <global offwidth="640" offheight="480"/>
+    <quality shadowsize="2048"/>
+    <headlight ambient="0.3 0.3 0.3" diffuse="0.3 0.3 0.3" specular="0.1 0.1 0.1"/>
+    <map znear="0.005"/>
+  </visual>
+
+  <asset>
+    <texture name="table_tex" type="2d" builtin="checker" rgb1="0.78 0.74 0.68" rgb2="0.70 0.66 0.60"
+             width="256" height="256"/>
+    <material name="table_mat" texture="table_tex" texrepeat="6 6"/>
+    <material name="gripper_mat" rgba="0.18 0.18 0.2 1"/>
+    <material name="pad_mat" rgba="0.85 0.85 0.85 1"/>
+  </asset>
+
+  <default>
+    <geom solref="0.004 1"/>
+    <default class="finger">
+      <joint type="slide" axis="0 1 0" range="0 0.04" damping="20" armature="0.01"/>
+      <geom type="box" size="0.012 0.004 0.03" material="pad_mat" friction="2 0.05 0.001" condim="4"
+            solimp="0.95 0.99 0.001" mass="0.03"/>
+    </default>
+  </default>
+
+  <worldbody>
+    <light pos="0 0 1.5" dir="0 0 -1" diffuse="0.35 0.35 0.35"/>
+    <light pos="0.6 -0.6 1.0" dir="-0.5 0.5 -1" diffuse="0.15 0.15 0.15"/>
+    <geom name="floor" type="plane" size="1.5 1.5 0.05" pos="0 0 -0.4" rgba="0.3 0.32 0.35 1"/>
+    <geom name="table" type="box" size="0.35 0.35 0.02" pos="0 0 -0.02" material="table_mat"
+          friction="1 0.05 0.001"/>
+
+    <!-- Visual-only place target (flat disc on the table). Position is set at reset via the mocap body. -->
+    <body name="target" mocap="true" pos="0.1 0.1 0.001">
+      <geom name="target" type="cylinder" size="0.04 0.001" rgba="0.1 0.75 0.2 1"
+            contype="0" conaffinity="0"/>
+    </body>
+
+    <body name="cube" pos="0 0 0.02">
+      <freejoint name="cube"/>
+      <geom name="cube" type="box" size="0.02 0.02 0.02" rgba="0.85 0.1 0.1 1" mass="0.05"
+            friction="1.5 0.05 0.001" condim="4"/>
+    </body>
+
+    <!-- Gripper: body origin is the tool centre point (TCP), between the finger pads. -->
+    <body name="gripper" pos="0 0 0.25" gravcomp="1">
+      <joint name="gx" type="slide" axis="1 0 0" range="-0.3 0.3" damping="60"/>
+      <joint name="gy" type="slide" axis="0 1 0" range="-0.3 0.3" damping="60"/>
+      <joint name="gz" type="slide" axis="0 0 1" range="-0.24 0.2" damping="60"/>
+      <joint name="gyaw" type="hinge" axis="0 0 1" range="-1.6 1.6" damping="2"/>
+      <geom name="palm" type="box" size="0.02 0.06 0.012" pos="0 0 0.062" material="gripper_mat" mass="0.5"/>
+      <geom name="mount" type="cylinder" size="0.015 0.03" pos="0 0 0.104" material="gripper_mat" mass="0.1"/>
+      <!-- Wrist camera: mounted on the palm, behind the fingers (-x), looking down (tilted 10 deg forward) past them; wide FOV
+           so the place target stays in view while the held cube blocks the image centre. -->
+      <camera name="wrist" pos="-0.07 0 0.09" xyaxes="0 -1 0 0.985 0 0.174" fovy="90"/>
+      <site name="tcp" pos="0 0 0" size="0.003" rgba="1 1 0 0"/>
+      <body name="finger_left" pos="0 0.008 0.02" gravcomp="1">
+        <joint name="finger_left" class="finger"/>
+        <geom name="finger_left" class="finger" pos="0 0.004 0"/>
+      </body>
+      <body name="finger_right" pos="0 -0.008 0.02" gravcomp="1">
+        <joint name="finger_right" class="finger" axis="0 -1 0"/>
+        <geom name="finger_right" class="finger" pos="0 -0.004 0"/>
+      </body>
+    </body>
+
+    <camera name="scene" pos="0.75 -0.55 0.6" xyaxes="0.55 0.75 0 -0.4125 0.3025 0.865" fovy="45"/>
+  </worldbody>
+
+  <equality>
+    <joint joint1="finger_left" joint2="finger_right" polycoef="0 1 0 0 0"/>
+  </equality>
+
+  <actuator>
+    <position name="ax" joint="gx" kp="1500" ctrlrange="-0.3 0.3"/>
+    <position name="ay" joint="gy" kp="1500" ctrlrange="-0.3 0.3"/>
+    <position name="az" joint="gz" kp="1500" ctrlrange="-0.24 0.2"/>
+    <position name="ayaw" joint="gyaw" kp="40" ctrlrange="-1.6 1.6"/>
+    <!-- ctrl is the opening of each finger (0 = closed, 0.04 = open); force-limited so grasps are compliant. -->
+    <position name="agrip" joint="finger_left" kp="800" ctrlrange="0 0.04" forcerange="-15 15"/>
+  </actuator>
+</mujoco>
