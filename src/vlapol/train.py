@@ -83,6 +83,7 @@ def camera_rename_map(policy_path: str, dataset_root: Path) -> dict[str, str]:
     A pretrained checkpoint keeps its own image feature names; lerobot requires the dataset's
     cameras to be a subset of them (or renamed to be). Returns {} when no renaming is needed.
     """
+    import lerobot.policies  # noqa: F401  (registers the policy config types, e.g. 'smolvla')
     from lerobot.configs import FeatureType, PreTrainedConfig
 
     config = PreTrainedConfig.from_pretrained(policy_path)

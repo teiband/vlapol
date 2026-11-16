@@ -30,3 +30,28 @@ def test_incomplete_directories_are_ignored(tmp_path):
     (tmp_path / "checkpoints" / "001000.partial").mkdir(parents=True)
     (tmp_path / "checkpoints" / "002000").mkdir()  # no train_config.json yet
     assert latest_checkpoint(tmp_path) is None
+
+
+def test_camera_rename_map_in_fresh_process(tmp_path):
+    """Runs in a subprocess: the policy registry must be populated by vlapol.train itself."""
+    import json
+    import subprocess
+    import sys
+
+    import pytest
+
+    pytest.importorskip("lerobot")
+    (tmp_path / "ds" / "meta").mkdir(parents=True)
+    features = {"observation.images.wrist": {"dtype": "video", "shape": [256, 256, 3]}}
+    (tmp_path / "ds" / "meta" / "info.json").write_text(json.dumps({"features": features}))
+    script = f"""
+from vlapol.train import camera_rename_map
+from lerobot.configs import FeatureType, PolicyFeature
+from lerobot.policies.smolvla.configuration_smolvla import SmolVLAConfig
+cams = {{f"observation.images.camera{{i}}": PolicyFeature(FeatureType.VISUAL, (3, 256, 256)) for i in (1, 2)}}
+SmolVLAConfig(input_features=cams, device="cpu").save_pretrained(r"{tmp_path / "base"}")
+"""
+    subprocess.run([sys.executable, "-c", script], check=True)
+    check = f'from vlapol.train import camera_rename_map as f; print(f(r"{tmp_path / "base"}", r"{tmp_path / "ds"}"))'
+    out = subprocess.run([sys.executable, "-c", check], check=True, capture_output=True, text=True).stdout
+    assert "'observation.images.wrist': 'observation.images.camera1'" in out
