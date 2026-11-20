@@ -55,3 +55,22 @@ SmolVLAConfig(input_features=cams, device="cpu").save_pretrained(r"{tmp_path / "
     check = f'from vlapol.train import camera_rename_map as f; print(f(r"{tmp_path / "base"}", r"{tmp_path / "ds"}"))'
     out = subprocess.run([sys.executable, "-c", check], check=True, capture_output=True, text=True).stdout
     assert "'observation.images.wrist': 'observation.images.camera1'" in out
+
+
+def test_resume_command_keeps_save_freq(tmp_path):
+    import argparse
+
+    from vlapol.train import build_command
+
+    make_checkpoint(tmp_path / "drive", 2000)
+    args = argparse.Namespace(
+        local_dir=tmp_path / "local",
+        run_dir=tmp_path / "drive",
+        dataset_root=tmp_path / "ds",
+        steps=20000,
+        save_freq=500,
+        num_workers=2,
+    )
+    cmd = build_command(args, ["--policy.device=cuda"])
+    assert "--resume=true" in cmd and "--save_freq=500" in cmd and cmd[-1] == "--policy.device=cuda"
+    assert (tmp_path / "local" / "checkpoints" / "002000" / "pretrained_model" / "train_config.json").is_file()

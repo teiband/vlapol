@@ -133,7 +133,11 @@ def build_command(args: argparse.Namespace, extra: list[str]) -> list[str] | Non
         shutil.rmtree(local_dir, ignore_errors=True)
         local_ckpt.parent.mkdir(parents=True, exist_ok=True)
         shutil.copytree(newest, local_ckpt)
-    print(f"[vlapol] resuming from step {step} ({newest})", flush=True)
+    print(
+        f"[vlapol] resuming from step {step} ({newest}); the progress bar counts only the "
+        f"{args.steps - step} remaining steps",
+        flush=True,
+    )
     return [
         "lerobot-train",
         f"--config_path={local_ckpt / TRAIN_CONFIG}",
@@ -141,6 +145,8 @@ def build_command(args: argparse.Namespace, extra: list[str]) -> list[str] | Non
         f"--output_dir={local_dir}",
         f"--dataset.root={Path(args.dataset_root).resolve()}",
         f"--steps={args.steps}",
+        f"--save_freq={args.save_freq}",
+        f"--num_workers={args.num_workers}",
     ] + extra
 
 
